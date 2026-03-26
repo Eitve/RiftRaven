@@ -1,7 +1,7 @@
 // Game name: 3–16 chars, Unicode letters + digits + spaces + underscores + periods
 const GAME_NAME_REGEX = /^[\p{L}\p{N} _.]{3,16}$/u
-// Tagline: 3–5 alphanumeric chars only
-const TAG_LINE_REGEX = /^[A-Za-z0-9]{3,5}$/
+// Tagline: 2–5 alphanumeric chars
+const TAG_LINE_REGEX = /^[A-Za-z0-9]{2,5}$/
 
 export function validateGameName(name: string): boolean {
   return GAME_NAME_REGEX.test(name)

@@ -6,7 +6,7 @@ const corsHeaders = {
 }
 
 const GAME_NAME_REGEX = /^[\p{L}\p{N} _.]{3,16}$/u
-const TAG_LINE_REGEX = /^[A-Za-z0-9]{3,5}$/
+const TAG_LINE_REGEX = /^[A-Za-z0-9]{2,5}$/
 
 function getRegionalRoute(platform: string): string {
   if (['NA1', 'BR1', 'LA1', 'LA2'].includes(platform)) return 'americas'
@@ -29,12 +29,11 @@ Deno.serve(async (req: Request) => {
   try {
     const { gameName, tagLine, region } = await req.json()
 
-    // 1. Server-side input validation
     if (!GAME_NAME_REGEX.test(gameName)) {
       return respond({ error: 'Invalid game name: 3–16 chars, letters/digits/spaces/underscores/periods only' }, 400)
     }
     if (!TAG_LINE_REGEX.test(tagLine)) {
-      return respond({ error: 'Invalid tagline: 3–5 alphanumeric characters only' }, 400)
+      return respond({ error: 'Invalid tagline: 2–5 alphanumeric characters only' }, 400)
     }
 
     const supabase = createClient(
@@ -45,7 +44,7 @@ Deno.serve(async (req: Request) => {
     const riotKey = Deno.env.get('RIOT_API_KEY')
     if (!riotKey) return respond({ error: 'Riot API key not configured' }, 500)
 
-    // 2. Resolve Riot ID → PUUID via Riot Account API
+    // Resolve Riot ID → PUUID
     const regional = getRegionalRoute(region)
     const accountRes = await fetch(
       `https://${regional}.api.riotgames.com/riot/account/v1/accounts/by-riot-id/${encodeURIComponent(gameName)}/${encodeURIComponent(tagLine)}`,
@@ -61,20 +60,17 @@ Deno.serve(async (req: Request) => {
     const account = await accountRes.json() as { puuid: string; gameName: string; tagLine: string }
     const playerId = account.puuid
 
-    // 3. Always compile (cooldown disabled for development)
-    // TODO: restore 15-min cooldown before production
-
-    // 4. Invoke compile-profile and wait
-    const { error: compileErr } = await supabase.functions.invoke('compile-profile', {
-      body: { playerId, region, gameName: account.gameName, tagLine: account.tagLine },
-      headers: {
-        Authorization: `Bearer ${Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')}`,
+    // Upsert minimal profile — do NOT touch ranked_data / analytics (that's compile-profile's job)
+    await supabase.from('profiles').upsert(
+      {
+        player_id: playerId,
+        game_name: account.gameName,
+        tag_line: account.tagLine,
+        region,
       },
-    })
+      { onConflict: 'player_id' },
+    )
 
-    if (compileErr) throw new Error(`Compilation failed: ${compileErr.message}`)
-
-    // 5. Return freshly compiled profile
     const { data: fresh } = await supabase
       .from('profiles')
       .select('player_id, game_name, tag_line, region, last_compiled_at')

@@ -102,8 +102,8 @@ export default function ProfileScreen() {
     setRefreshing(true)
     setError(null)
     try {
-      const { error: fnErr } = await supabase.functions.invoke('search-profile', {
-        body: { gameName, tagLine, region },
+      const { error: fnErr } = await supabase.functions.invoke('compile-profile', {
+        body: { playerId, region, gameName, tagLine },
       })
       if (fnErr) {
         const body = await (fnErr as { context?: Response }).context?.json().catch(() => null)

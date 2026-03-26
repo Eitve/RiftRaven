@@ -46,7 +46,7 @@ export default function SearchScreen() {
       const localResults = (local ?? []) as SearchResult[]
       setResults(localResults)
 
-      if (parsed && validateGameName(parsed.gameName) && validateTagLine(parsed.tagLine)) {
+      if (parsed && validateGameName(parsed.gameName) && parsed.tagLine.length >= 2) {
         const exactMatch = localResults.find(
           (r) =>
             r.game_name.toLowerCase() === parsed.gameName.toLowerCase() &&
