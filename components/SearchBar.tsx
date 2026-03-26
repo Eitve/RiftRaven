@@ -4,16 +4,18 @@ import { TextInput, StyleSheet, View } from 'react-native'
 interface Props {
   value: string
   onChangeText: (text: string) => void
+  onSubmit?: () => void
   disabled?: boolean
 }
 
-export function SearchBar({ value, onChangeText, disabled }: Props) {
+export function SearchBar({ value, onChangeText, onSubmit, disabled }: Props) {
   return (
     <View style={styles.container}>
       <TextInput
         style={[styles.input, disabled && styles.disabled]}
         value={value}
         onChangeText={onChangeText}
+        onSubmitEditing={onSubmit}
         placeholder="Faker#T1"
         placeholderTextColor="#444"
         autoCapitalize="none"

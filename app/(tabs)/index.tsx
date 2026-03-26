@@ -1,4 +1,4 @@
-import React, { useState, useRef, useCallback } from 'react'
+import React, { useState, useCallback } from 'react'
 import {
   View,
   FlatList,
@@ -7,6 +7,7 @@ import {
   ActivityIndicator,
   KeyboardAvoidingView,
   Platform,
+  Pressable,
 } from 'react-native'
 import { useRouter } from 'expo-router'
 import { SearchBar } from '../../components/SearchBar'
@@ -25,24 +26,19 @@ export default function SearchScreen() {
   const [results, setResults] = useState<SearchResult[]>([])
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const [inFlight, setInFlight] = useState(false)
-  const debounceTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   const performSearch = useCallback(async (text: string, currentRegion: Region) => {
-    if (!text.trim()) {
-      setResults([])
-      return
-    }
+    const trimmed = text.trim()
+    if (!trimmed) return
 
     setLoading(true)
-    setInFlight(true)
     setError(null)
 
     try {
-      const parsed = parseRiotId(text.trim())
-      const searchName = parsed ? parsed.gameName : text.trim()
+      const parsed = parseRiotId(trimmed)
+      const searchName = parsed ? parsed.gameName : trimmed
 
-      // 1. Local-first: query Supabase profiles table instantly
+      // 1. Local-first: query profiles table instantly
       const { data: local, error: dbErr } = await supabase
         .from('profiles')
         .select('player_id, game_name, tag_line, region, last_compiled_at')
@@ -55,7 +51,7 @@ export default function SearchScreen() {
       const localResults = (local ?? []) as SearchResult[]
       setResults(localResults)
 
-      // 2. If Name#Tag entered and no exact local match → call search-profile Edge Function
+      // 2. If Name#Tag entered and no exact local match → call Edge Function
       if (parsed && validateGameName(parsed.gameName) && validateTagLine(parsed.tagLine)) {
         const exactMatch = localResults.find(
           (r) =>
@@ -67,7 +63,6 @@ export default function SearchScreen() {
           const apiResults = await searchProfile(parsed.gameName, parsed.tagLine, currentRegion)
           setResults((prev) => {
             const merged = [...prev, ...apiResults]
-            // Deduplicate by player_id
             return merged.filter(
               (r, i, arr) => arr.findIndex((x) => x.player_id === r.player_id) === i,
             )
@@ -79,28 +74,10 @@ export default function SearchScreen() {
       setResults([])
     } finally {
       setLoading(false)
-      setInFlight(false)
     }
   }, [])
 
-  const handleQueryChange = (text: string) => {
-    setQuery(text)
-    if (debounceTimer.current) clearTimeout(debounceTimer.current)
-    if (!text.trim()) {
-      setResults([])
-      setError(null)
-      return
-    }
-    debounceTimer.current = setTimeout(() => performSearch(text, region), 300)
-  }
-
-  const handleRegionChange = (newRegion: Region) => {
-    setRegion(newRegion)
-    if (query.trim()) {
-      if (debounceTimer.current) clearTimeout(debounceTimer.current)
-      debounceTimer.current = setTimeout(() => performSearch(query, newRegion), 300)
-    }
-  }
+  const handleSearch = () => performSearch(query, region)
 
   const handleResultPress = (result: SearchResult) => {
     router.push({
@@ -121,39 +98,61 @@ export default function SearchScreen() {
     >
       <View style={styles.inputRow}>
         <View style={styles.searchBarWrapper}>
-          <SearchBar value={query} onChangeText={handleQueryChange} disabled={inFlight} />
+          <SearchBar
+            value={query}
+            onChangeText={setQuery}
+            onSubmit={handleSearch}
+          />
         </View>
-        <RegionPicker value={region} onChange={handleRegionChange} disabled={inFlight} />
+        <RegionPicker value={region} onChange={setRegion} disabled={loading} />
       </View>
+
+      <Pressable
+        style={[styles.searchButton, loading && styles.searchButtonDisabled]}
+        onPress={handleSearch}
+        disabled={loading || !query.trim()}
+      >
+        {loading
+          ? <ActivityIndicator color="#0A0A0A" size="small" />
+          : <Text style={styles.searchButtonText}>Search</Text>
+        }
+      </Pressable>
 
       {error !== null && <Text style={styles.error}>{error}</Text>}
 
-      {loading ? (
-        <ActivityIndicator style={styles.spinner} color="#C89B3C" />
-      ) : (
-        <FlatList
-          data={results}
-          keyExtractor={(r) => r.player_id}
-          renderItem={({ item }) => (
-            <PlayerCard result={item} onPress={() => handleResultPress(item)} />
-          )}
-          ListEmptyComponent={
-            query.trim() && !loading ? (
-              <Text style={styles.empty}>No players found</Text>
-            ) : null
-          }
-          keyboardShouldPersistTaps="handled"
-        />
-      )}
+      <FlatList
+        data={results}
+        keyExtractor={(r) => r.player_id}
+        renderItem={({ item }) => (
+          <PlayerCard result={item} onPress={() => handleResultPress(item)} />
+        )}
+        ListEmptyComponent={
+          !loading && results.length === 0 && query.trim() ? (
+            <Text style={styles.empty}>No players found</Text>
+          ) : null
+        }
+        keyboardShouldPersistTaps="handled"
+        style={styles.list}
+      />
     </KeyboardAvoidingView>
   )
 }
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#0A0A0A', paddingTop: 16, paddingHorizontal: 16 },
-  inputRow: { flexDirection: 'row', gap: 8, marginBottom: 12 },
+  inputRow: { flexDirection: 'row', gap: 8, marginBottom: 8 },
   searchBarWrapper: { flex: 1 },
+  searchButton: {
+    backgroundColor: '#C89B3C',
+    borderRadius: 8,
+    height: 44,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 12,
+  },
+  searchButtonDisabled: { opacity: 0.5 },
+  searchButtonText: { color: '#0A0A0A', fontWeight: '700', fontSize: 15 },
   error: { color: '#E84057', marginBottom: 8, fontSize: 13 },
-  spinner: { marginTop: 32 },
+  list: { flex: 1 },
   empty: { color: '#444', textAlign: 'center', marginTop: 48, fontSize: 14 },
 })

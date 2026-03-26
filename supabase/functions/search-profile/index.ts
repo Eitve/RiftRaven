@@ -77,22 +77,14 @@ Deno.serve(async (req: Request) => {
     }
 
     // 4. Cache miss or stale → invoke compile-profile and wait
-    const compileRes = await fetch(
-      `${Deno.env.get('SUPABASE_URL')}/functions/v1/compile-profile`,
-      {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')}`,
-        },
-        body: JSON.stringify({ playerId, region, gameName: account.gameName, tagLine: account.tagLine }),
+    const { error: compileErr } = await supabase.functions.invoke('compile-profile', {
+      body: { playerId, region, gameName: account.gameName, tagLine: account.tagLine },
+      headers: {
+        Authorization: `Bearer ${Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')}`,
       },
-    )
+    })
 
-    if (!compileRes.ok) {
-      const err = await compileRes.json().catch(() => ({})) as { error?: string }
-      throw new Error(`Compilation failed: ${err?.error ?? compileRes.status}`)
-    }
+    if (compileErr) throw new Error(`Compilation failed: ${compileErr.message}`)
 
     // 5. Return freshly compiled profile
     const { data: fresh } = await supabase
