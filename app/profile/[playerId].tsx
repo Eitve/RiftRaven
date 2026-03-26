@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react'
 import {
-  View, Text, StyleSheet, Pressable, ScrollView, ActivityIndicator,
+  View, Text, StyleSheet, Pressable, ScrollView, ActivityIndicator, Image,
 } from 'react-native'
 import { Stack, useLocalSearchParams } from 'expo-router'
 import { supabase } from '../../lib/supabase'
@@ -22,6 +22,8 @@ interface RankedEntry {
 interface ProfileData {
   ranked_data: RankedEntry[] | null
   last_compiled_at: string | null
+  profile_icon_id: number | null
+  summoner_level: number | null
 }
 
 interface AnalyticsRow {
@@ -57,6 +59,7 @@ export default function ProfileScreen() {
 
   const regionLabel = REGIONS.find((r) => r.value === region)?.label ?? region
 
+  const [ddVersion, setDdVersion] = useState<string | null>(null)
   const [profile, setProfile] = useState<ProfileData | null>(null)
   const [analytics, setAnalytics] = useState<AnalyticsRow[]>([])
   const [favorited, setFavorited] = useState(false)
@@ -67,10 +70,10 @@ export default function ProfileScreen() {
   const fetchData = useCallback(async () => {
     try {
       const currentYear = new Date().getFullYear()
-      const [{ data: p }, { data: a }, fav] = await Promise.all([
+      const [{ data: p }, { data: a }, fav, versionsRes] = await Promise.all([
         supabase
           .from('profiles')
-          .select('ranked_data, last_compiled_at')
+          .select('ranked_data, last_compiled_at, profile_icon_id, summoner_level')
           .eq('player_id', playerId)
           .single(),
         supabase
@@ -79,10 +82,12 @@ export default function ProfileScreen() {
           .eq('player_id', playerId)
           .eq('season', `S${currentYear}`),
         isFavorite(playerId),
+        fetch('https://ddragon.leagueoflegends.com/api/versions.json').then((r) => r.json()).catch(() => null),
       ])
       setProfile(p as ProfileData | null)
       setAnalytics((a ?? []) as AnalyticsRow[])
       setFavorited(fav)
+      if (Array.isArray(versionsRes)) setDdVersion(versionsRes[0])
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load profile')
     } finally {
@@ -148,11 +153,26 @@ export default function ProfileScreen() {
 
         {/* Header */}
         <View style={styles.header}>
-          <Text style={styles.name}>
-            {gameName}<Text style={styles.tag}>#{tagLine}</Text>
-          </Text>
-          <View style={styles.regionBadge}>
-            <Text style={styles.regionBadgeText}>{regionLabel}</Text>
+          {ddVersion && profile?.profile_icon_id ? (
+            <Image
+              source={{ uri: `https://ddragon.leagueoflegends.com/cdn/${ddVersion}/img/profileicon/${profile.profile_icon_id}.png` }}
+              style={styles.profileIcon}
+            />
+          ) : (
+            <View style={[styles.profileIcon, styles.profileIconPlaceholder]} />
+          )}
+          <View style={styles.headerInfo}>
+            <Text style={styles.name}>
+              {gameName}<Text style={styles.tag}>#{tagLine}</Text>
+            </Text>
+            <View style={styles.headerMeta}>
+              <View style={styles.regionBadge}>
+                <Text style={styles.regionBadgeText}>{regionLabel}</Text>
+              </View>
+              {profile?.summoner_level != null && (
+                <Text style={styles.level}>Lv. {profile.summoner_level}</Text>
+              )}
+            </View>
           </View>
         </View>
 
@@ -241,11 +261,19 @@ function RankedCard({ label, entry }: { label: string; entry?: RankedEntry }) {
   const wr = entry
     ? Math.round((entry.wins / Math.max(entry.wins + entry.losses, 1)) * 100)
     : 0
+  const tierName = entry
+    ? entry.tier.charAt(0) + entry.tier.slice(1).toLowerCase()
+    : null
+  const emblemUri = tierName
+    ? `https://ddragon.leagueoflegends.com/cdn/img/ranked-emblems/${tierName}.png`
+    : null
+
   return (
     <View style={styles.rankedCard}>
       <Text style={styles.rankedLabel}>{label}</Text>
-      {entry ? (
+      {entry && emblemUri ? (
         <>
+          <Image source={{ uri: emblemUri }} style={styles.emblem} resizeMode="contain" />
           <Text style={styles.rankedTier}>{formatRank(entry)}</Text>
           <Text style={styles.rankedLP}>{entry.leaguePoints} LP</Text>
           <Text style={styles.rankedRecord}>{entry.wins}W {entry.losses}L</Text>
@@ -272,18 +300,21 @@ const styles = StyleSheet.create({
   content: { padding: 16, paddingBottom: 40 },
   center: { flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: theme.bg },
 
-  header: { marginBottom: 20 },
-  name: { fontSize: 26, fontWeight: '700', color: theme.textPrimary },
+  header: { flexDirection: 'row', alignItems: 'center', gap: 14, marginBottom: 20 },
+  profileIcon: { width: 72, height: 72, borderRadius: 36, borderWidth: 2, borderColor: theme.accent },
+  profileIconPlaceholder: { backgroundColor: theme.border },
+  headerInfo: { flex: 1 },
+  name: { fontSize: 22, fontWeight: '700', color: theme.textPrimary },
   tag: { color: theme.textMuted, fontWeight: '400' },
+  headerMeta: { flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 6 },
   regionBadge: {
-    alignSelf: 'flex-start',
-    marginTop: 6,
     backgroundColor: '#FEF9EC',
     borderRadius: 6,
     paddingHorizontal: 8,
     paddingVertical: 2,
   },
   regionBadgeText: { color: theme.accentDark, fontSize: 12, fontWeight: '600' },
+  level: { color: theme.textSecondary, fontSize: 12 },
 
   rankedRow: { flexDirection: 'row', gap: 10, marginBottom: 20 },
   rankedCard: {
@@ -303,10 +334,11 @@ const styles = StyleSheet.create({
     textTransform: 'uppercase',
     marginBottom: 4,
   },
-  rankedTier: { color: theme.textPrimary, fontSize: 16, fontWeight: '700' },
-  rankedLP: { color: theme.textSecondary, fontSize: 13 },
-  rankedRecord: { color: theme.textSecondary, fontSize: 12 },
-  rankedWR: { color: theme.accent, fontSize: 12, fontWeight: '600' },
+  emblem: { width: 64, height: 64, alignSelf: 'center', marginVertical: 4 },
+  rankedTier: { color: theme.textPrimary, fontSize: 16, fontWeight: '700', textAlign: 'center' },
+  rankedLP: { color: theme.textSecondary, fontSize: 13, textAlign: 'center' },
+  rankedRecord: { color: theme.textSecondary, fontSize: 12, textAlign: 'center' },
+  rankedWR: { color: theme.accent, fontSize: 12, fontWeight: '600', textAlign: 'center' },
   unranked: { color: theme.textMuted, fontSize: 14, marginTop: 6 },
 
   section: {
