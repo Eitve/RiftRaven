@@ -109,18 +109,24 @@ Deno.serve(async (req: Request) => {
     const matchIds = await matchListRes.json() as string[]
 
     if (matchIds.length === 0) {
-      // No new matches — refresh ranked data + timestamp
-      const rankedRes = await riotFetch(
-        `https://${region.toLowerCase()}.api.riotgames.com/lol/league/v4/entries/by-puuid/${playerId}`,
-        riotKey,
-      )
+      // No new matches — refresh ranked + summoner data + timestamp
+      const platform = region.toLowerCase()
+      const [rankedRes, summonerRes] = await Promise.all([
+        riotFetch(`https://${platform}.api.riotgames.com/lol/league/v4/entries/by-puuid/${playerId}`, riotKey),
+        riotFetch(`https://${platform}.api.riotgames.com/lol/summoner/v4/summoners/by-puuid/${playerId}`, riotKey),
+      ])
       const rankedData = rankedRes.ok ? await rankedRes.json() : []
+      const summoner = summonerRes.ok
+        ? await summonerRes.json() as { profileIconId: number; summonerLevel: number }
+        : null
       await supabase.from('profiles').upsert({
         player_id: playerId,
         game_name: gameName,
         tag_line: tagLine,
         region,
         ranked_data: rankedData,
+        profile_icon_id: summoner?.profileIconId ?? null,
+        summoner_level: summoner?.summonerLevel ?? null,
         last_compiled_at: new Date().toISOString(),
       })
       return respond({ status: 'ok', newMatches: 0 })
@@ -250,20 +256,26 @@ Deno.serve(async (req: Request) => {
       }
     }
 
-    // 5. Fetch ranked data (platform routing: euw1, na1, kr, etc.)
-    const rankedRes = await riotFetch(
-      `https://${region.toLowerCase()}.api.riotgames.com/lol/league/v4/entries/by-puuid/${playerId}`,
-      riotKey,
-    )
+    // 5. Fetch ranked data + summoner info in parallel (platform routing: euw1, na1, kr, etc.)
+    const platform = region.toLowerCase()
+    const [rankedRes, summonerRes] = await Promise.all([
+      riotFetch(`https://${platform}.api.riotgames.com/lol/league/v4/entries/by-puuid/${playerId}`, riotKey),
+      riotFetch(`https://${platform}.api.riotgames.com/lol/summoner/v4/summoners/by-puuid/${playerId}`, riotKey),
+    ])
     const rankedData = rankedRes.ok ? await rankedRes.json() : []
+    const summoner = summonerRes.ok
+      ? await summonerRes.json() as { profileIconId: number; summonerLevel: number }
+      : null
 
-    // 6. Update profile with ranked data + timestamp
+    // 6. Update profile with ranked + summoner data + timestamp
     await supabase.from('profiles').upsert({
       player_id: playerId,
       game_name: gameName,
       tag_line: tagLine,
       region,
       ranked_data: rankedData,
+      profile_icon_id: summoner?.profileIconId ?? null,
+      summoner_level: summoner?.summonerLevel ?? null,
       last_compiled_at: new Date().toISOString(),
     })
 
