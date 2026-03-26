@@ -11,7 +11,6 @@ interface Props {
 
 export function PlayerCard({ result, onPress }: Props) {
   const regionLabel = REGIONS.find((r) => r.value === result.region)?.label ?? result.region
-  const cached = result.last_compiled_at !== null
 
   return (
     <Pressable
@@ -23,10 +22,7 @@ export function PlayerCard({ result, onPress }: Props) {
           {result.game_name}
           <Text style={styles.tag}>#{result.tag_line}</Text>
         </Text>
-        <Text style={styles.meta}>
-          {regionLabel}
-          {cached ? ' · cached' : ' · not compiled yet'}
-        </Text>
+        <Text style={styles.meta}>{regionLabel}</Text>
       </View>
       <Text style={styles.chevron}>›</Text>
     </Pressable>
