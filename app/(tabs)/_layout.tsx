@@ -10,6 +10,7 @@ export default function TabLayout() {
           backgroundColor: theme.tabBg,
           borderTopColor: theme.border,
           borderTopWidth: 1,
+          elevation: 0,
         },
         tabBarActiveTintColor: theme.accent,
         tabBarInactiveTintColor: theme.textMuted,

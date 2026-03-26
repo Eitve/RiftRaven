@@ -22,7 +22,9 @@
         "foregroundImage": "./assets/adaptive-icon.png",
         "backgroundColor": "#0A0A0A"
       },
-      "package": "com.riftraven.app"
+      "package": "com.riftraven.app",
+      "navigationBarColor": "#0A1520",
+      "navigationBarStyle": "light"
     },
     "web": {
       "bundler": "metro",
@@ -31,10 +33,22 @@
     "plugins": [
       "expo-router",
       "expo-asset",
-      "expo-font"
+      ["expo-font", {
+        "fonts": [
+          "./node_modules/@expo/vector-icons/build/vendor/react-native-vector-icons/Fonts/Ionicons.ttf"
+        ]
+      }]
     ],
     "experiments": {
       "typedRoutes": true
+    },
+    "extra": {
+      "router": {
+        "origin": false
+      },
+      "eas": {
+        "projectId": "9a18cc92-57e2-4f2a-ae71-9aa4954a7a51"
+      }
     }
   }
 }
