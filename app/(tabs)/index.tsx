@@ -9,6 +9,7 @@ import { RegionPicker } from '../../components/RegionPicker'
 import { PlayerCard } from '../../components/PlayerCard'
 import { supabase } from '../../lib/supabase'
 import { searchProfile } from '../../lib/api'
+import { getDefaultRegion } from '../../lib/storage'
 import { parseRiotId, validateGameName, validateTagLine } from '../../lib/validation'
 import { DEFAULT_REGION } from '../../constants/regions'
 import { theme } from '../../constants/theme'
@@ -84,7 +85,10 @@ export default function SearchScreen() {
     scheduleSearch(query, r)
   }
 
-  useEffect(() => () => { if (debounceRef.current) clearTimeout(debounceRef.current) }, [])
+  useEffect(() => {
+    getDefaultRegion().then((r) => { if (r) setRegion(r) })
+    return () => { if (debounceRef.current) clearTimeout(debounceRef.current) }
+  }, [])
 
   return (
     <KeyboardAvoidingView

@@ -2,20 +2,16 @@ import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 import { corsHeaders, QUEUE_NAMES, getRegionalRoute, riotFetch, delay, respond } from '../_shared/riot-utils.ts'
 import { mergeAnalytics, type AnalyticsBucket } from '../_shared/analytics.ts'
 
-// Dev key limits: 20 req/s and 100 req/2 min (~0.83 req/s sustained)
-// 20 matches × 1200ms delay = ~24s — safe within Edge Function timeout
-// Full history loaded progressively via backfill-history function
-const MATCH_FETCH_LIMIT = 20
+// ~40 match details per invocation at 1200ms = 48s — fits within 60s Edge Function timeout
+const BATCH_SIZE = 40
 
 Deno.serve(async (req: Request) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders })
 
   try {
-    const { playerId, region, gameName, tagLine } = await req.json() as {
+    const { playerId, region } = await req.json() as {
       playerId: string
       region: string
-      gameName: string
-      tagLine: string
     }
 
     const supabase = createClient(
@@ -25,47 +21,44 @@ Deno.serve(async (req: Request) => {
     const riotKey = Deno.env.get('RIOT_API_KEY')!
     const regional = getRegionalRoute(region)
 
-    // Get last_compiled_at for incremental fetch and cooldown check
-    const { data: existing } = await supabase
+    // Read backfill state
+    const { data: profile } = await supabase
       .from('profiles')
-      .select('last_compiled_at')
+      .select('history_cursor, history_complete, last_compiled_at')
       .eq('player_id', playerId)
       .single()
 
-    // 15-minute cooldown enforcement
-    if (existing?.last_compiled_at) {
-      const COOLDOWN_MS = 15 * 60 * 1000
-      const elapsed = Date.now() - new Date(existing.last_compiled_at).getTime()
-      if (elapsed < COOLDOWN_MS) {
-        const remainingMin = Math.ceil((COOLDOWN_MS - elapsed) / 60000)
-        return respond(
-          { error: `Cooldown active. Try again in ${remainingMin} minute(s).`, cooldown: true },
-          429,
-        )
+    if (!profile) {
+      return respond({ error: 'Profile not found. Compile profile first.' }, 404)
+    }
+
+    if (profile.history_complete) {
+      return respond({ processed: 0, hasMore: false })
+    }
+
+    // If no cursor yet, derive it from the oldest match we already have
+    let cursor = profile.history_cursor as number | null
+    if (cursor === null) {
+      const { data: oldestMatch } = await supabase
+        .from('matches')
+        .select('match_timestamp')
+        .eq('player_id', playerId)
+        .order('match_timestamp', { ascending: true })
+        .limit(1)
+        .single()
+
+      if (!oldestMatch) {
+        return respond({ error: 'No matches found. Compile profile first.' }, 400)
       }
+      cursor = Math.floor(new Date(oldestMatch.match_timestamp).getTime() / 1000)
     }
 
-    // Acquire advisory lock to prevent duplicate concurrent compilation
-    const { data: lockAcquired } = await supabase.rpc('try_compile_lock', { pid: playerId })
-    if (!lockAcquired) {
-      return respond(
-        { error: 'Profile is being compiled by another request. Try again shortly.' },
-        409,
-      )
-    }
-
-    try {
-
-    const startTime = existing?.last_compiled_at
-      ? Math.floor(new Date(existing.last_compiled_at).getTime() / 1000)
-      : undefined
-
-    // 1. Fetch match IDs (incremental from startTime)
+    // Fetch match IDs BEFORE the cursor (going backward in time)
     const matchListUrl = new URL(
       `https://${regional}.api.riotgames.com/lol/match/v5/matches/by-puuid/${playerId}/ids`,
     )
-    matchListUrl.searchParams.set('count', String(MATCH_FETCH_LIMIT))
-    if (startTime) matchListUrl.searchParams.set('startTime', String(startTime))
+    matchListUrl.searchParams.set('endTime', String(cursor))
+    matchListUrl.searchParams.set('count', '100')
 
     const matchListRes = await riotFetch(matchListUrl.toString(), riotKey)
     if (!matchListRes.ok) {
@@ -73,36 +66,23 @@ Deno.serve(async (req: Request) => {
     }
     const matchIds = await matchListRes.json() as string[]
 
+    // No more matches — backfill complete
     if (matchIds.length === 0) {
-      // No new matches — refresh ranked + summoner data + timestamp
-      const platform = region.toLowerCase()
-      const [rankedRes, summonerRes] = await Promise.all([
-        riotFetch(`https://${platform}.api.riotgames.com/lol/league/v4/entries/by-puuid/${playerId}`, riotKey),
-        riotFetch(`https://${platform}.api.riotgames.com/lol/summoner/v4/summoners/by-puuid/${playerId}`, riotKey),
-      ])
-      const rankedData = rankedRes.ok ? await rankedRes.json() : []
-      const summoner = summonerRes.ok
-        ? await summonerRes.json() as { profileIconId: number; summonerLevel: number }
-        : null
-      await supabase.from('profiles').upsert({
-        player_id: playerId,
-        game_name: gameName,
-        tag_line: tagLine,
-        region,
-        ranked_data: rankedData,
-        profile_icon_id: summoner?.profileIconId ?? null,
-        summoner_level: summoner?.summonerLevel ?? null,
-        last_compiled_at: new Date().toISOString(),
-      })
-      return respond({ status: 'ok', newMatches: 0 })
+      await supabase
+        .from('profiles')
+        .update({ history_complete: true })
+        .eq('player_id', playerId)
+      return respond({ processed: 0, hasMore: false })
     }
 
-    // 2. Fetch each match + accumulate analytics
+    // Process up to BATCH_SIZE matches (stay within Edge Function timeout)
+    const toProcess = matchIds.slice(0, BATCH_SIZE)
     const analyticsMap: Record<string, Record<string, AnalyticsBucket>> = {}
     const newMatches: unknown[] = []
     const newParticipants: unknown[] = []
+    let oldestTimestamp = cursor
 
-    for (const matchId of matchIds) {
+    for (const matchId of toProcess) {
       const matchRes = await riotFetch(
         `https://${regional}.api.riotgames.com/lol/match/v5/matches/${matchId}`,
         riotKey,
@@ -133,6 +113,11 @@ Deno.serve(async (req: Request) => {
       const queueType = QUEUE_NAMES[info.queueId] ?? `QUEUE_${info.queueId}`
       const season = `S${new Date(info.gameStartTimestamp).getFullYear()}`
       const matchTimestamp = new Date(info.gameStartTimestamp).toISOString()
+      const matchEpoch = Math.floor(info.gameStartTimestamp / 1000)
+
+      if (matchEpoch < oldestTimestamp) {
+        oldestTimestamp = matchEpoch
+      }
 
       const me = info.participants.find((p) => p.puuid === playerId)
       if (!me) continue
@@ -166,7 +151,7 @@ Deno.serve(async (req: Request) => {
         })
       }
 
-      // Accumulate into analytics buckets
+      // Accumulate analytics
       analyticsMap[season] ??= {}
       analyticsMap[season][queueType] ??= {
         total_games: 0, wins: 0, champion_stats: {}, role_distribution: {},
@@ -187,11 +172,10 @@ Deno.serve(async (req: Request) => {
       const role = me.teamPosition || 'UNKNOWN'
       bucket.role_distribution[role] = (bucket.role_distribution[role] ?? 0) + 1
 
-      // Throttle to 100 req/2 min sustained rate (~0.83 req/s)
       await delay(1200)
     }
 
-    // 3. Persist matches + participants
+    // Persist matches + participants
     if (newMatches.length > 0) {
       await supabase.from('matches').upsert(newMatches, { onConflict: 'match_id,player_id' })
     }
@@ -199,7 +183,7 @@ Deno.serve(async (req: Request) => {
       await supabase.from('match_participants').upsert(newParticipants, { onConflict: 'match_id,player_id' })
     }
 
-    // 4. Merge new analytics into existing analytics_cache
+    // Merge analytics into cache
     for (const [season, queues] of Object.entries(analyticsMap)) {
       for (const [queueType, newStats] of Object.entries(queues)) {
         const { data: cached } = await supabase
@@ -222,35 +206,21 @@ Deno.serve(async (req: Request) => {
       }
     }
 
-    // 5. Fetch ranked data + summoner info in parallel (platform routing: euw1, na1, kr, etc.)
-    const platform = region.toLowerCase()
-    const [rankedRes, summonerRes] = await Promise.all([
-      riotFetch(`https://${platform}.api.riotgames.com/lol/league/v4/entries/by-puuid/${playerId}`, riotKey),
-      riotFetch(`https://${platform}.api.riotgames.com/lol/summoner/v4/summoners/by-puuid/${playerId}`, riotKey),
-    ])
-    const rankedData = rankedRes.ok ? await rankedRes.json() : []
-    const summoner = summonerRes.ok
-      ? await summonerRes.json() as { profileIconId: number; summonerLevel: number }
-      : null
+    // Update cursor — if we got fewer match IDs than requested, we've reached the end
+    const hasMore = matchIds.length === 100
+    await supabase
+      .from('profiles')
+      .update({
+        history_cursor: oldestTimestamp,
+        history_complete: !hasMore,
+      })
+      .eq('player_id', playerId)
 
-    // 6. Update profile with ranked + summoner data + timestamp
-    await supabase.from('profiles').upsert({
-      player_id: playerId,
-      game_name: gameName,
-      tag_line: tagLine,
-      region,
-      ranked_data: rankedData,
-      profile_icon_id: summoner?.profileIconId ?? null,
-      summoner_level: summoner?.summonerLevel ?? null,
-      last_compiled_at: new Date().toISOString(),
+    return respond({
+      processed: newMatches.length,
+      hasMore,
+      cursor: oldestTimestamp,
     })
-
-    return respond({ status: 'ok', newMatches: newMatches.length })
-
-    } finally {
-      // Release advisory lock
-      await supabase.rpc('release_compile_lock', { pid: playerId })
-    }
 
   } catch (err) {
     return respond({ error: err instanceof Error ? err.message : 'Internal error' }, 500)

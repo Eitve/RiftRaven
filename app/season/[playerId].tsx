@@ -1,10 +1,11 @@
 import React, { useState, useEffect, useCallback } from 'react'
 import {
-  View, Text, StyleSheet, ScrollView, ActivityIndicator,
+  View, Text, StyleSheet, ScrollView, ActivityIndicator, Image,
 } from 'react-native'
 import { Stack, useLocalSearchParams } from 'expo-router'
 import { supabase } from '../../lib/supabase'
 import { theme } from '../../constants/theme'
+import { fetchChampionMap, getChampionImageUrl, type ChampionMap } from '../../lib/champions'
 
 const QUEUE_LABELS: Record<string, string> = {
   RANKED_SOLO_5x5: 'Ranked Solo',
@@ -34,20 +35,6 @@ interface AnalyticsRow {
   role_distribution: Record<string, number>
 }
 
-type ChampionMap = Record<string, string>
-
-async function fetchChampionMap(version: string): Promise<ChampionMap> {
-  const res = await fetch(
-    `https://ddragon.leagueoflegends.com/cdn/${version}/data/en_US/champion.json`,
-  )
-  const json = await res.json() as { data: Record<string, { key: string; name: string }> }
-  const map: ChampionMap = {}
-  for (const champ of Object.values(json.data)) {
-    map[champ.key] = champ.name
-  }
-  return map
-}
-
 export default function SeasonStatsScreen() {
   const { playerId, gameName, tagLine } = useLocalSearchParams<{
     playerId: string
@@ -57,6 +44,7 @@ export default function SeasonStatsScreen() {
 
   const [rows, setRows] = useState<AnalyticsRow[]>([])
   const [championMap, setChampionMap] = useState<ChampionMap>({})
+  const [ddVersion, setDdVersion] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
 
   const fetchData = useCallback(async () => {
@@ -73,6 +61,7 @@ export default function SeasonStatsScreen() {
       ])
       setRows((data ?? []) as AnalyticsRow[])
       if (Array.isArray(versionsRes) && versionsRes[0]) {
+        setDdVersion(versionsRes[0])
         fetchChampionMap(versionsRes[0]).then(setChampionMap).catch(() => {})
       }
     } finally {
@@ -117,7 +106,10 @@ export default function SeasonStatsScreen() {
               const wr = Math.round((row.wins / Math.max(row.total_games, 1)) * 100)
 
               const topChamps = Object.entries(row.champion_stats)
-                .map(([id, s]) => ({ id, name: championMap[id] ?? `#${id}`, ...s }))
+                .map(([id, s]) => {
+                  const info = championMap[id]
+                  return { id, name: info?.name ?? `#${id}`, ddId: info?.id ?? null, ...s }
+                })
                 .sort((a, b) => b.games - a.games)
                 .slice(0, 10)
 
@@ -148,6 +140,14 @@ export default function SeasonStatsScreen() {
                         return (
                           <View key={c.id} style={[styles.champRow, i > 0 && styles.champRowBorder]}>
                             <Text style={styles.champRank}>{i + 1}</Text>
+                            {ddVersion && c.ddId ? (
+                              <Image
+                                source={{ uri: getChampionImageUrl(ddVersion, c.ddId) }}
+                                style={styles.champIcon}
+                              />
+                            ) : (
+                              <View style={[styles.champIcon, styles.champIconPlaceholder]} />
+                            )}
                             <Text style={styles.champName} numberOfLines={1}>{c.name}</Text>
                             <Text style={styles.champGames}>{c.games}G</Text>
                             <Text style={[styles.champWR, cwr >= 50 && styles.champWRGood]}>{cwr}%</Text>
@@ -246,6 +246,8 @@ const styles = StyleSheet.create({
   champRow: { flexDirection: 'row', alignItems: 'center', paddingVertical: 7, gap: 8 },
   champRowBorder: { borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: theme.separator },
   champRank: { color: theme.textMuted, fontSize: 12, width: 18, textAlign: 'center' },
+  champIcon: { width: 28, height: 28, borderRadius: 4 },
+  champIconPlaceholder: { backgroundColor: theme.border },
   champName: { color: theme.textPrimary, fontSize: 14, fontWeight: '600', flex: 1 },
   champGames: { color: theme.textSecondary, fontSize: 13, width: 36, textAlign: 'right' },
   champWR: { color: theme.textSecondary, fontSize: 13, width: 40, textAlign: 'right' },

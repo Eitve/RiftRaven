@@ -1,13 +1,17 @@
-import React, { useState, useEffect, useCallback } from 'react'
+import React, { useState, useEffect, useCallback, useRef } from 'react'
 import {
   View, Text, StyleSheet, Pressable, ScrollView, ActivityIndicator, Image,
 } from 'react-native'
 import { Stack, useLocalSearchParams, useRouter } from 'expo-router'
 import { supabase } from '../../lib/supabase'
+import { backfillHistory } from '../../lib/api'
 import { addFavorite, removeFavorite, isFavorite } from '../../lib/storage'
 import { REGIONS } from '../../constants/regions'
 import { theme } from '../../constants/theme'
-import type { Region } from '../../types'
+import { fetchChampionMap, getChampionImageUrl, type ChampionMap } from '../../lib/champions'
+import { MatchRow } from '../../components/MatchRow'
+import { fetchDuoStats, fetchFiveStackGroups, type DuoPartner, type FiveStackGroup } from '../../lib/duo-stats'
+import type { Region, Match } from '../../types'
 
 
 interface RankedEntry {
@@ -24,6 +28,7 @@ interface ProfileData {
   last_compiled_at: string | null
   profile_icon_id: number | null
   summoner_level: number | null
+  history_complete: boolean | null
 }
 
 interface AnalyticsRow {
@@ -63,18 +68,25 @@ export default function ProfileScreen() {
   const [ddVersion, setDdVersion] = useState<string | null>(null)
   const [profile, setProfile] = useState<ProfileData | null>(null)
   const [analytics, setAnalytics] = useState<AnalyticsRow[]>([])
+  const [matches, setMatches] = useState<Match[]>([])
+  const [championMap, setChampionMap] = useState<ChampionMap>({})
+  const [duoPartners, setDuoPartners] = useState<DuoPartner[]>([])
+  const [fiveStacks, setFiveStacks] = useState<FiveStackGroup[]>([])
   const [favorited, setFavorited] = useState(false)
   const [loading, setLoading] = useState(true)
   const [refreshing, setRefreshing] = useState(false)
+  const [refreshStatus, setRefreshStatus] = useState<string | null>(null)
+  const [backfilling, setBackfilling] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const backfillRef = useRef(false)
 
   const fetchData = useCallback(async () => {
     try {
       const currentYear = new Date().getFullYear()
-      const [{ data: p }, { data: a }, fav, versionsRes] = await Promise.all([
+      const [{ data: p }, { data: a }, { data: m }, fav, versionsRes] = await Promise.all([
         supabase
           .from('profiles')
-          .select('ranked_data, last_compiled_at, profile_icon_id, summoner_level')
+          .select('ranked_data, last_compiled_at, profile_icon_id, summoner_level, history_complete')
           .eq('player_id', playerId)
           .single(),
         supabase
@@ -82,13 +94,26 @@ export default function ProfileScreen() {
           .select('queue_type, total_games, wins, champion_stats')
           .eq('player_id', playerId)
           .eq('season', `S${currentYear}`),
+        supabase
+          .from('matches')
+          .select('*')
+          .eq('player_id', playerId)
+          .order('match_timestamp', { ascending: false })
+          .limit(20),
         isFavorite(playerId),
         fetch('https://ddragon.leagueoflegends.com/api/versions.json').then((r) => r.json()).catch(() => null),
       ])
       setProfile(p as ProfileData | null)
       setAnalytics((a ?? []) as AnalyticsRow[])
+      setMatches((m ?? []) as Match[])
       setFavorited(fav)
-      if (Array.isArray(versionsRes)) setDdVersion(versionsRes[0])
+      if (Array.isArray(versionsRes) && versionsRes[0]) {
+        setDdVersion(versionsRes[0])
+        fetchChampionMap(versionsRes[0]).then(setChampionMap).catch(() => {})
+      }
+      // Fetch duo + five-stack stats (non-blocking)
+      fetchDuoStats(playerId).then(setDuoPartners).catch(() => {})
+      fetchFiveStackGroups(playerId).then(setFiveStacks).catch(() => {})
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load profile')
     } finally {
@@ -96,10 +121,32 @@ export default function ProfileScreen() {
     }
   }, [playerId])
 
+  const startBackfill = useCallback(() => {
+    if (backfillRef.current) return
+    backfillRef.current = true
+    setBackfilling(true)
+    backfillHistory(playerId, region, (processed, hasMore) => {
+      if (processed > 0) fetchData()
+    })
+      .catch(() => {})
+      .finally(() => {
+        backfillRef.current = false
+        setBackfilling(false)
+      })
+  }, [playerId, region, fetchData])
+
   useEffect(() => { fetchData() }, [fetchData])
+
+  // Auto-resume backfill on mount if history is incomplete
+  useEffect(() => {
+    if (profile && profile.last_compiled_at && profile.history_complete === false) {
+      startBackfill()
+    }
+  }, [profile?.history_complete, profile?.last_compiled_at, startBackfill])
 
   const handleRefresh = async () => {
     setRefreshing(true)
+    setRefreshStatus('Compiling profile...')
     setError(null)
     try {
       const { error: fnErr } = await supabase.functions.invoke('compile-profile', {
@@ -109,11 +156,14 @@ export default function ProfileScreen() {
         const body = await (fnErr as { context?: Response }).context?.json().catch(() => null)
         throw new Error(body?.error ?? fnErr.message)
       }
+      setRefreshStatus('Loading data...')
       await fetchData()
+      startBackfill()
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Refresh failed')
     } finally {
       setRefreshing(false)
+      setRefreshStatus(null)
     }
   }
 
@@ -132,7 +182,15 @@ export default function ProfileScreen() {
     setFavorited(!favorited)
   }
 
-  const canRefresh = true
+  const COOLDOWN_MS = 15 * 60 * 1000
+  const lastCompiledMs = profile?.last_compiled_at
+    ? new Date(profile.last_compiled_at).getTime()
+    : 0
+  const elapsed = Date.now() - lastCompiledMs
+  const canRefresh = !profile?.last_compiled_at || elapsed >= COOLDOWN_MS
+  const cooldownRemaining = canRefresh
+    ? null
+    : `${Math.ceil((COOLDOWN_MS - elapsed) / 60000)}m`
 
   const rankedData = Array.isArray(profile?.ranked_data) ? profile.ranked_data : []
   const soloEntry = rankedData.find((e) => e.queueType === 'RANKED_SOLO_5x5')
@@ -205,6 +263,82 @@ export default function ProfileScreen() {
           </View>
         )}
 
+        {/* Recent Matches */}
+        {matches.length > 0 && (
+          <View style={styles.section}>
+            <Text style={styles.sectionTitle}>
+              Recent Matches
+              {backfilling && (
+                <Text style={styles.backfillHint}> · loading history...</Text>
+              )}
+            </Text>
+            {matches.map((m) => {
+              const champ = championMap[String(m.champion_id)]
+              return (
+                <MatchRow
+                  key={m.match_id}
+                  match={m}
+                  championName={champ?.name ?? `#${m.champion_id}`}
+                  championImageUrl={
+                    ddVersion && champ
+                      ? getChampionImageUrl(ddVersion, champ.id)
+                      : null
+                  }
+                />
+              )
+            })}
+          </View>
+        )}
+
+        {/* Frequent Teammates */}
+        {duoPartners.length > 0 && (
+          <View style={styles.section}>
+            <Text style={styles.sectionTitle}>Frequent Teammates</Text>
+            {duoPartners.map((p) => {
+              const wr = Math.round((p.wins_together / Math.max(p.games_together, 1)) * 100)
+              return (
+                <Pressable
+                  key={p.partner_id}
+                  style={styles.duoRow}
+                  onPress={() => router.push({
+                    pathname: '/profile/[playerId]',
+                    params: {
+                      playerId: p.partner_id,
+                      region,
+                      gameName: p.partner_name,
+                      tagLine: '',
+                    },
+                  })}
+                >
+                  <Text style={styles.duoName} numberOfLines={1}>{p.partner_name}</Text>
+                  <Text style={styles.duoGames}>{p.games_together} games</Text>
+                  <Text style={[styles.duoWR, wr >= 50 && styles.duoWRGood]}>{wr}% WR</Text>
+                </Pressable>
+              )
+            })}
+          </View>
+        )}
+
+        {/* Likely Premade Groups (five-stacks) */}
+        {fiveStacks.length > 0 && (
+          <View style={styles.section}>
+            <Text style={styles.sectionTitle}>Likely Premade Groups</Text>
+            {fiveStacks.map((group, i) => {
+              const names = group.teammate_names.split(',')
+              const wr = Math.round((group.wins_together / Math.max(group.games_together, 1)) * 100)
+              return (
+                <View key={i} style={styles.stackRow}>
+                  <Text style={styles.stackNames} numberOfLines={2}>
+                    {names.join(', ')}
+                  </Text>
+                  <Text style={styles.duoGames}>{group.games_together} games</Text>
+                  <Text style={[styles.duoWR, wr >= 50 && styles.duoWRGood]}>{wr}% WR</Text>
+                </View>
+              )
+            })}
+          </View>
+        )}
+
         {/* Not compiled yet */}
         {!profile?.last_compiled_at && (
           <View style={styles.uncompiled}>
@@ -230,11 +364,16 @@ export default function ProfileScreen() {
             onPress={handleRefresh}
             disabled={!canRefresh || refreshing}
           >
-            {refreshing
-              ? <ActivityIndicator color="#fff" size="small" />
-              : <Text style={styles.refreshButtonText}>
-                  Refresh
-                </Text>}
+            {refreshing ? (
+              <View style={styles.refreshingRow}>
+                <ActivityIndicator color="#fff" size="small" />
+                {refreshStatus && <Text style={styles.refreshStatusText}>{refreshStatus}</Text>}
+              </View>
+            ) : (
+              <Text style={styles.refreshButtonText}>
+                {canRefresh ? 'Refresh' : `Refresh (${cooldownRemaining})`}
+              </Text>
+            )}
           </Pressable>
 
           <Pressable
@@ -386,11 +525,34 @@ const styles = StyleSheet.create({
     textTransform: 'uppercase',
     marginBottom: 12,
   },
+  backfillHint: { color: theme.textMuted, fontWeight: '400', textTransform: 'none', letterSpacing: 0 },
   statsRow: { flexDirection: 'row', justifyContent: 'space-between' },
   statBox: { alignItems: 'center', flex: 1 },
   statValue: { color: theme.textPrimary, fontSize: 18, fontWeight: '700' },
   statValueHighlight: { color: theme.accent },
   statLabel: { color: theme.textMuted, fontSize: 11, marginTop: 2 },
+
+  duoRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 10,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: theme.separator,
+    gap: 8,
+  },
+  duoName: { color: theme.textPrimary, fontSize: 14, fontWeight: '600', flex: 1 },
+  duoGames: { color: theme.textSecondary, fontSize: 13, width: 70, textAlign: 'right' },
+  duoWR: { color: theme.textSecondary, fontSize: 13, width: 50, textAlign: 'right' },
+  duoWRGood: { color: theme.success },
+  stackRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 10,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: theme.separator,
+    gap: 8,
+  },
+  stackNames: { color: theme.textPrimary, fontSize: 12, flex: 1 },
 
   uncompiled: { alignItems: 'center', paddingVertical: 40 },
   uncompiledTitle: { color: theme.textSecondary, fontSize: 15, fontWeight: '600', marginBottom: 6 },
@@ -413,6 +575,8 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   refreshButtonText: { color: '#fff', fontWeight: '700', fontSize: 15 },
+  refreshingRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  refreshStatusText: { color: '#fff', fontSize: 13, fontWeight: '500' },
   buttonDisabled: { opacity: 0.4 },
 
   favoriteButton: {

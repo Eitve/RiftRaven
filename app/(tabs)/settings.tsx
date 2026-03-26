@@ -1,11 +1,34 @@
-import React from 'react'
+import React, { useState, useEffect } from 'react'
 import { View, Text, StyleSheet, ScrollView } from 'react-native'
 import Constants from 'expo-constants'
 import { theme } from '../../constants/theme'
+import { RegionPicker } from '../../components/RegionPicker'
+import { getDefaultRegion, setDefaultRegion } from '../../lib/storage'
+import { DEFAULT_REGION } from '../../constants/regions'
+import type { Region } from '../../types'
 
 export default function SettingsScreen() {
+  const [region, setRegion] = useState<Region>(DEFAULT_REGION)
+
+  useEffect(() => {
+    getDefaultRegion().then((r) => { if (r) setRegion(r) })
+  }, [])
+
+  const handleRegionChange = (r: Region) => {
+    setRegion(r)
+    setDefaultRegion(r)
+  }
+
   return (
     <ScrollView style={styles.container} contentContainerStyle={styles.content}>
+      <View style={styles.section}>
+        <Text style={styles.sectionTitle}>Preferences</Text>
+        <View style={styles.row}>
+          <Text style={styles.label}>Default Region</Text>
+          <RegionPicker value={region} onChange={handleRegionChange} />
+        </View>
+      </View>
+
       <View style={styles.section}>
         <Text style={styles.sectionTitle}>About</Text>
         <View style={styles.row}>
@@ -42,6 +65,7 @@ const styles = StyleSheet.create({
   row: {
     flexDirection: 'row',
     justifyContent: 'space-between',
+    alignItems: 'center',
     paddingVertical: 12,
     borderBottomWidth: StyleSheet.hairlineWidth,
     borderBottomColor: theme.border,
