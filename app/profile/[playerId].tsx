@@ -2,7 +2,7 @@ import React, { useState, useEffect, useCallback } from 'react'
 import {
   View, Text, StyleSheet, Pressable, ScrollView, ActivityIndicator, Image,
 } from 'react-native'
-import { Stack, useLocalSearchParams } from 'expo-router'
+import { Stack, useLocalSearchParams, useRouter } from 'expo-router'
 import { supabase } from '../../lib/supabase'
 import { addFavorite, removeFavorite, isFavorite } from '../../lib/storage'
 import { REGIONS } from '../../constants/regions'
@@ -50,6 +50,7 @@ function formatRank(entry: RankedEntry): string {
 }
 
 export default function ProfileScreen() {
+  const router = useRouter()
   const { playerId, region, gameName, tagLine } = useLocalSearchParams<{
     playerId: string
     region: string
@@ -246,10 +247,15 @@ export default function ProfileScreen() {
           </Pressable>
         </View>
 
-        {/* Season Statistics placeholder */}
-        <Pressable style={styles.statsLink} disabled>
-          <Text style={styles.statsLinkText}>Season Statistics</Text>
-          <Text style={styles.statsLinkSub}>Coming in Sprint 3</Text>
+        {/* Season Statistics */}
+        <Pressable
+          style={styles.statsLink}
+          onPress={() => router.push({
+            pathname: '/season/[playerId]',
+            params: { playerId, gameName, tagLine, region },
+          })}
+        >
+          <Text style={styles.statsLinkText}>Season Statistics →</Text>
         </Pressable>
 
       </ScrollView>
@@ -257,24 +263,42 @@ export default function ProfileScreen() {
   )
 }
 
+const TIER_COLORS: Record<string, string> = {
+  IRON: '#8D8589', BRONZE: '#A6724B', SILVER: '#80989D', GOLD: '#C89B3C',
+  PLATINUM: '#0BC4B4', EMERALD: '#1E7F4E', DIAMOND: '#576BCE',
+  MASTER: '#9D48E0', GRANDMASTER: '#D4402C', CHALLENGER: '#F4C874',
+}
+
 function RankedCard({ label, entry }: { label: string; entry?: RankedEntry }) {
+  const [imgFailed, setImgFailed] = useState(false)
   const wr = entry
     ? Math.round((entry.wins / Math.max(entry.wins + entry.losses, 1)) * 100)
     : 0
-  const tierName = entry
-    ? entry.tier.charAt(0) + entry.tier.slice(1).toLowerCase()
+  const tierLower = entry?.tier.toLowerCase()
+  // Community Dragon hosts ranked mini-crests publicly
+  const emblemUri = tierLower
+    ? `https://raw.communitydragon.org/latest/plugins/rcp-fe-lol-static-assets/global/default/images/ranked-mini-crests/${tierLower}.png`
     : null
-  const emblemUri = tierName
-    ? `https://ddragon.leagueoflegends.com/cdn/img/ranked-emblems/${tierName}.png`
-    : null
+  const tierColor = entry ? (TIER_COLORS[entry.tier] ?? theme.textMuted) : theme.textMuted
 
   return (
     <View style={styles.rankedCard}>
       <Text style={styles.rankedLabel}>{label}</Text>
-      {entry && emblemUri ? (
+      {entry ? (
         <>
-          <Image source={{ uri: emblemUri }} style={styles.emblem} resizeMode="contain" />
-          <Text style={styles.rankedTier}>{formatRank(entry)}</Text>
+          {emblemUri && !imgFailed ? (
+            <Image
+              source={{ uri: emblemUri }}
+              style={styles.emblem}
+              resizeMode="contain"
+              onError={() => setImgFailed(true)}
+            />
+          ) : (
+            <View style={[styles.emblemFallback, { backgroundColor: tierColor }]}>
+              <Text style={styles.emblemFallbackText}>{entry.tier.slice(0, 2)}</Text>
+            </View>
+          )}
+          <Text style={[styles.rankedTier, { color: tierColor }]}>{formatRank(entry)}</Text>
           <Text style={styles.rankedLP}>{entry.leaguePoints} LP</Text>
           <Text style={styles.rankedRecord}>{entry.wins}W {entry.losses}L</Text>
           <Text style={styles.rankedWR}>{wr}% WR</Text>
@@ -335,7 +359,12 @@ const styles = StyleSheet.create({
     marginBottom: 4,
   },
   emblem: { width: 64, height: 64, alignSelf: 'center', marginVertical: 4 },
-  rankedTier: { color: theme.textPrimary, fontSize: 16, fontWeight: '700', textAlign: 'center' },
+  emblemFallback: {
+    width: 56, height: 56, borderRadius: 28, alignSelf: 'center',
+    marginVertical: 6, alignItems: 'center', justifyContent: 'center',
+  },
+  emblemFallbackText: { color: '#fff', fontWeight: '800', fontSize: 16 },
+  rankedTier: { fontSize: 16, fontWeight: '700', textAlign: 'center' },
   rankedLP: { color: theme.textSecondary, fontSize: 13, textAlign: 'center' },
   rankedRecord: { color: theme.textSecondary, fontSize: 12, textAlign: 'center' },
   rankedWR: { color: theme.accent, fontSize: 12, fontWeight: '600', textAlign: 'center' },
@@ -403,11 +432,9 @@ const styles = StyleSheet.create({
     borderRadius: 10,
     borderWidth: 1,
     borderColor: theme.border,
+    backgroundColor: theme.surface,
     padding: 16,
     alignItems: 'center',
-    gap: 4,
-    opacity: 0.5,
   },
-  statsLinkText: { color: theme.textSecondary, fontSize: 14, fontWeight: '600' },
-  statsLinkSub: { color: theme.textMuted, fontSize: 11 },
+  statsLinkText: { color: theme.accent, fontSize: 14, fontWeight: '600' },
 })
