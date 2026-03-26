@@ -9,7 +9,6 @@ import { REGIONS } from '../../constants/regions'
 import { theme } from '../../constants/theme'
 import type { Region } from '../../types'
 
-const COOLDOWN_MS = 15 * 60 * 1000
 
 interface RankedEntry {
   queueType: string
@@ -127,11 +126,11 @@ export default function ProfileScreen() {
     setFavorited(!favorited)
   }
 
-  const canRefresh = !profile?.last_compiled_at ||
-    Date.now() - new Date(profile.last_compiled_at).getTime() > COOLDOWN_MS
+  const canRefresh = true
 
-  const soloEntry = profile?.ranked_data?.find((e) => e.queueType === 'RANKED_SOLO_5x5')
-  const flexEntry = profile?.ranked_data?.find((e) => e.queueType === 'RANKED_FLEX_SR')
+  const rankedData = Array.isArray(profile?.ranked_data) ? profile.ranked_data : []
+  const soloEntry = rankedData.find((e) => e.queueType === 'RANKED_SOLO_5x5')
+  const flexEntry = rankedData.find((e) => e.queueType === 'RANKED_FLEX_SR')
   const soloAnalytics = analytics.find((a) => a.queue_type === 'RANKED_SOLO_5x5')
 
   if (loading) {
@@ -213,7 +212,7 @@ export default function ProfileScreen() {
             {refreshing
               ? <ActivityIndicator color="#fff" size="small" />
               : <Text style={styles.refreshButtonText}>
-                  {canRefresh ? 'Refresh' : 'Refresh (cooldown)'}
+                  Refresh
                 </Text>}
           </Pressable>
 

@@ -7,7 +7,6 @@ const corsHeaders = {
 
 const GAME_NAME_REGEX = /^[\p{L}\p{N} _.]{3,16}$/u
 const TAG_LINE_REGEX = /^[A-Za-z0-9]{3,5}$/
-const COOLDOWN_MS = 15 * 60 * 1000
 
 function getRegionalRoute(platform: string): string {
   if (['NA1', 'BR1', 'LA1', 'LA2'].includes(platform)) return 'americas'
@@ -62,21 +61,10 @@ Deno.serve(async (req: Request) => {
     const account = await accountRes.json() as { puuid: string; gameName: string; tagLine: string }
     const playerId = account.puuid
 
-    // 3. Check profiles table — return cache if still fresh
-    const { data: profile } = await supabase
-      .from('profiles')
-      .select('player_id, game_name, tag_line, region, last_compiled_at')
-      .eq('player_id', playerId)
-      .single()
+    // 3. Always compile (cooldown disabled for development)
+    // TODO: restore 15-min cooldown before production
 
-    if (profile?.last_compiled_at) {
-      const age = Date.now() - new Date(profile.last_compiled_at).getTime()
-      if (age < COOLDOWN_MS) {
-        return respond([profile], 200)
-      }
-    }
-
-    // 4. Cache miss or stale → invoke compile-profile and wait
+    // 4. Invoke compile-profile and wait
     const { error: compileErr } = await supabase.functions.invoke('compile-profile', {
       body: { playerId, region, gameName: account.gameName, tagLine: account.tagLine },
       headers: {
