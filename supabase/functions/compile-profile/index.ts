@@ -5,8 +5,10 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 }
 
-// Cap matches per compile to stay within Riot dev key rate limits (100 req / 2 min)
-const MATCH_FETCH_LIMIT = 20
+// Dev key limits: 20 req/s and 100 req/2 min (~0.83 req/s sustained)
+// 10 matches × 1200ms delay = ~12 API calls in ~12s — safe for demo
+// TODO: raise limit + lower delay after Riot approves production key
+const MATCH_FETCH_LIMIT = 10
 
 const QUEUE_NAMES: Record<number, string> = {
   420: 'RANKED_SOLO_5x5',
@@ -221,8 +223,8 @@ Deno.serve(async (req: Request) => {
       const role = me.teamPosition || 'UNKNOWN'
       bucket.role_distribution[role] = (bucket.role_distribution[role] ?? 0) + 1
 
-      // Throttle to respect rate limits (20 req/s dev key)
-      await delay(60)
+      // Throttle to 100 req/2 min sustained rate (~0.83 req/s)
+      await delay(1200)
     }
 
     // 3. Persist matches + participants
