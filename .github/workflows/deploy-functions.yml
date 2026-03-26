@@ -6,6 +6,7 @@ on:
     paths:
       - 'supabase/functions/**'
       - 'supabase/migrations/**'
+      - '.github/workflows/deploy-functions.yml'
 
 jobs:
   deploy:
