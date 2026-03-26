@@ -90,7 +90,7 @@ const styles = StyleSheet.create({
     borderBottomWidth: StyleSheet.hairlineWidth,
     borderBottomColor: theme.separator,
   },
-  optionSelected: { backgroundColor: '#FEF9EC' },
+  optionSelected: { backgroundColor: theme.accentBg },
   optionText: { color: theme.textSecondary, fontSize: 15 },
   optionTextSelected: { color: theme.accentDark, fontWeight: '600' },
 })

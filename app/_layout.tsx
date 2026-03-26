@@ -20,6 +20,10 @@ export default function RootLayout() {
           name="profile/[playerId]"
           options={{ title: 'Profile', headerBackTitle: 'Search' }}
         />
+        <Stack.Screen
+          name="season/[playerId]"
+          options={{ title: 'Season Stats', headerBackTitle: 'Profile' }}
+        />
       </Stack>
     </>
   )

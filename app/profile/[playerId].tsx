@@ -332,7 +332,7 @@ const styles = StyleSheet.create({
   tag: { color: theme.textMuted, fontWeight: '400' },
   headerMeta: { flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 6 },
   regionBadge: {
-    backgroundColor: '#FEF9EC',
+    backgroundColor: theme.accentBg,
     borderRadius: 6,
     paddingHorizontal: 8,
     paddingVertical: 2,
@@ -424,7 +424,7 @@ const styles = StyleSheet.create({
     borderColor: theme.border,
     backgroundColor: theme.surface,
   },
-  favoriteButtonActive: { borderColor: theme.accent, backgroundColor: '#FEF9EC' },
+  favoriteButtonActive: { borderColor: theme.accent, backgroundColor: theme.accentBg },
   favoriteButtonText: { color: theme.textSecondary, fontWeight: '600', fontSize: 15 },
   favoriteButtonTextActive: { color: theme.accentDark },
 

@@ -1,7 +1,7 @@
-import React, { useState, useCallback } from 'react'
+import React, { useState, useCallback, useRef, useEffect } from 'react'
 import {
-  View, FlatList, Text, StyleSheet, ActivityIndicator,
-  KeyboardAvoidingView, Platform, Pressable,
+  View, FlatList, Text, StyleSheet,
+  KeyboardAvoidingView, Platform,
 } from 'react-native'
 import { useRouter } from 'expo-router'
 import { SearchBar } from '../../components/SearchBar'
@@ -21,6 +21,7 @@ export default function SearchScreen() {
   const [results, setResults] = useState<SearchResult[]>([])
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   const performSearch = useCallback(async (text: string, currentRegion: Region) => {
     const trimmed = text.trim()
@@ -67,29 +68,48 @@ export default function SearchScreen() {
     }
   }, [])
 
-  const handleSearch = () => performSearch(query, region)
+  const scheduleSearch = useCallback((text: string, currentRegion: Region) => {
+    if (debounceRef.current) clearTimeout(debounceRef.current)
+    if (!text.trim()) { setResults([]); return }
+    debounceRef.current = setTimeout(() => performSearch(text, currentRegion), 1000)
+  }, [performSearch])
+
+  const handleQueryChange = (text: string) => {
+    setQuery(text)
+    scheduleSearch(text, region)
+  }
+
+  const handleRegionChange = (r: Region) => {
+    setRegion(r)
+    scheduleSearch(query, r)
+  }
+
+  useEffect(() => () => { if (debounceRef.current) clearTimeout(debounceRef.current) }, [])
 
   return (
     <KeyboardAvoidingView
       style={styles.container}
       behavior={Platform.OS === 'ios' ? 'padding' : undefined}
     >
-      <View style={styles.inputRow}>
-        <View style={styles.searchBarWrapper}>
-          <SearchBar value={query} onChangeText={setQuery} onSubmit={handleSearch} />
-        </View>
-        <RegionPicker value={region} onChange={setRegion} disabled={loading} />
+      <View style={styles.header}>
+        <Text style={styles.title}>RiftRaven</Text>
+        <Text style={styles.subtitle}>League of Legends Player Search</Text>
       </View>
 
-      <Pressable
-        style={[styles.searchButton, (loading || !query.trim()) && styles.searchButtonDisabled]}
-        onPress={handleSearch}
-        disabled={loading || !query.trim()}
-      >
-        {loading
-          ? <ActivityIndicator color="#fff" size="small" />
-          : <Text style={styles.searchButtonText}>Search</Text>}
-      </Pressable>
+      <View style={styles.inputRow}>
+        <View style={styles.searchBarWrapper}>
+          <SearchBar
+            value={query}
+            onChangeText={handleQueryChange}
+            onSubmit={() => {
+              if (debounceRef.current) clearTimeout(debounceRef.current)
+              performSearch(query, region)
+            }}
+            loading={loading}
+          />
+        </View>
+        <RegionPicker value={region} onChange={handleRegionChange} disabled={loading} />
+      </View>
 
       {error !== null && <Text style={styles.error}>{error}</Text>}
 
@@ -113,8 +133,10 @@ export default function SearchScreen() {
           />
         )}
         ListEmptyComponent={
-          !loading && results.length === 0 && query.trim()
+          !loading && query.trim()
             ? <Text style={styles.empty}>No players found</Text>
+            : !query.trim()
+            ? <Text style={styles.hint}>Type a summoner name to search{'\n'}e.g. Faker#T1</Text>
             : null
         }
         keyboardShouldPersistTaps="handled"
@@ -125,20 +147,14 @@ export default function SearchScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: theme.bg, paddingTop: 16, paddingHorizontal: 16 },
-  inputRow: { flexDirection: 'row', gap: 8, marginBottom: 8 },
+  container: { flex: 1, backgroundColor: theme.bg, paddingTop: 20, paddingHorizontal: 16 },
+  header: { marginBottom: 24 },
+  title: { fontSize: 30, fontWeight: '800', color: theme.accent, letterSpacing: 0.5 },
+  subtitle: { fontSize: 13, color: theme.textMuted, marginTop: 3 },
+  inputRow: { flexDirection: 'row', gap: 8, marginBottom: 12 },
   searchBarWrapper: { flex: 1 },
-  searchButton: {
-    backgroundColor: theme.accent,
-    borderRadius: 8,
-    height: 44,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginBottom: 12,
-  },
-  searchButtonDisabled: { opacity: 0.4 },
-  searchButtonText: { color: '#fff', fontWeight: '700', fontSize: 15 },
   error: { color: theme.error, marginBottom: 8, fontSize: 13 },
   list: { flex: 1 },
   empty: { color: theme.textMuted, textAlign: 'center', marginTop: 48, fontSize: 14 },
+  hint: { color: theme.textMuted, textAlign: 'center', marginTop: 64, fontSize: 14, lineHeight: 22 },
 })

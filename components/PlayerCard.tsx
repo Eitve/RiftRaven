@@ -17,10 +17,12 @@ export function PlayerCard({ result, onPress }: Props) {
       style={({ pressed }) => [styles.card, pressed && styles.cardPressed]}
       onPress={onPress}
     >
+      <View style={styles.avatar}>
+        <Text style={styles.avatarText}>{result.game_name.charAt(0).toUpperCase()}</Text>
+      </View>
       <View style={styles.left}>
         <Text style={styles.name} numberOfLines={1}>
-          {result.game_name}
-          <Text style={styles.tag}>#{result.tag_line}</Text>
+          {result.game_name}<Text style={styles.tag}>#{result.tag_line}</Text>
         </Text>
         <Text style={styles.meta}>{regionLabel}</Text>
       </View>
@@ -33,16 +35,27 @@ const styles = StyleSheet.create({
   card: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingVertical: 14,
-    paddingHorizontal: 16,
+    padding: 14,
     backgroundColor: theme.surface,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: theme.border,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: theme.border,
+    marginBottom: 8,
   },
-  cardPressed: { backgroundColor: theme.separator },
+  cardPressed: { opacity: 0.65 },
+  avatar: {
+    width: 40,
+    height: 40,
+    borderRadius: 10,
+    backgroundColor: theme.border,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 12,
+  },
+  avatarText: { color: theme.accent, fontSize: 17, fontWeight: '700' },
   left: { flex: 1 },
   name: { color: theme.textPrimary, fontSize: 15, fontWeight: '600' },
   tag: { color: theme.textMuted, fontWeight: '400' },
   meta: { color: theme.textSecondary, fontSize: 12, marginTop: 2 },
-  chevron: { color: theme.textMuted, fontSize: 20, marginLeft: 8 },
+  chevron: { color: theme.textMuted, fontSize: 22, marginLeft: 8 },
 })
