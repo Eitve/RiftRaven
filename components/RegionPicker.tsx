@@ -1,14 +1,9 @@
 import React, { useState } from 'react'
 import {
-  View,
-  Text,
-  Pressable,
-  Modal,
-  FlatList,
-  StyleSheet,
-  SafeAreaView,
+  View, Text, Pressable, Modal, FlatList, StyleSheet, SafeAreaView,
 } from 'react-native'
 import { REGIONS } from '../constants/regions'
+import { theme } from '../constants/theme'
 import type { Region } from '../types'
 
 interface Props {
@@ -26,7 +21,6 @@ export function RegionPicker({ value, onChange, disabled }: Props) {
       <Pressable
         style={[styles.trigger, disabled && styles.triggerDisabled]}
         onPress={() => !disabled && setOpen(true)}
-        accessibilityLabel={`Region: ${selected?.label ?? value}. Tap to change.`}
       >
         <Text style={styles.triggerText}>{selected?.label ?? value}</Text>
         <Text style={styles.caret}>▾</Text>
@@ -41,21 +35,10 @@ export function RegionPicker({ value, onChange, disabled }: Props) {
             keyExtractor={(r) => r.value}
             renderItem={({ item }) => (
               <Pressable
-                style={[
-                  styles.option,
-                  item.value === value && styles.optionSelected,
-                ]}
-                onPress={() => {
-                  onChange(item.value)
-                  setOpen(false)
-                }}
+                style={[styles.option, item.value === value && styles.optionSelected]}
+                onPress={() => { onChange(item.value); setOpen(false) }}
               >
-                <Text
-                  style={[
-                    styles.optionText,
-                    item.value === value && styles.optionTextSelected,
-                  ]}
-                >
+                <Text style={[styles.optionText, item.value === value && styles.optionTextSelected]}>
                   {item.label}
                 </Text>
               </Pressable>
@@ -73,61 +56,41 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     borderRadius: 8,
     borderWidth: 1,
-    borderColor: '#2A2A2A',
-    backgroundColor: '#111',
+    borderColor: theme.border,
+    backgroundColor: theme.surface,
     flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
     minWidth: 64,
   },
-  triggerDisabled: {
-    opacity: 0.5,
-  },
-  triggerText: {
-    color: '#fff',
-    fontSize: 14,
-    fontWeight: '600',
-  },
-  caret: {
-    color: '#666',
-    fontSize: 10,
-  },
-  backdrop: {
-    flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.6)',
-  },
+  triggerDisabled: { opacity: 0.5 },
+  triggerText: { color: theme.textPrimary, fontSize: 14, fontWeight: '600' },
+  caret: { color: theme.textMuted, fontSize: 10 },
+  backdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.3)' },
   sheet: {
-    backgroundColor: '#141414',
+    backgroundColor: theme.surface,
     borderTopWidth: 1,
-    borderTopColor: '#2A2A2A',
+    borderTopColor: theme.border,
     maxHeight: '60%',
   },
   sheetTitle: {
-    color: '#C89B3C',
-    fontSize: 12,
-    fontWeight: '600',
+    color: theme.accentDark,
+    fontSize: 11,
+    fontWeight: '700',
     letterSpacing: 1,
     textTransform: 'uppercase',
     paddingHorizontal: 20,
     paddingVertical: 14,
     borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: '#2A2A2A',
+    borderBottomColor: theme.border,
   },
   option: {
     paddingVertical: 14,
     paddingHorizontal: 20,
     borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: '#1A1A1A',
+    borderBottomColor: theme.separator,
   },
-  optionSelected: {
-    backgroundColor: '#1C1A12',
-  },
-  optionText: {
-    color: '#aaa',
-    fontSize: 15,
-  },
-  optionTextSelected: {
-    color: '#C89B3C',
-    fontWeight: '600',
-  },
+  optionSelected: { backgroundColor: '#FEF9EC' },
+  optionText: { color: theme.textSecondary, fontSize: 15 },
+  optionTextSelected: { color: theme.accentDark, fontWeight: '600' },
 })

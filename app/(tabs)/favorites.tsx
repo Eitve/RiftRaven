@@ -3,6 +3,7 @@ import { View, FlatList, Text, StyleSheet } from 'react-native'
 import { useFocusEffect, useRouter } from 'expo-router'
 import { PlayerCard } from '../../components/PlayerCard'
 import { getFavorites } from '../../lib/storage'
+import { theme } from '../../constants/theme'
 import type { SearchResult } from '../../types'
 
 export default function FavoritesScreen() {
@@ -48,9 +49,9 @@ export default function FavoritesScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#0A0A0A' },
+  container: { flex: 1, backgroundColor: theme.bg },
   empty: {
-    color: '#444',
+    color: theme.textMuted,
     textAlign: 'center',
     marginTop: 80,
     fontSize: 14,

@@ -109,12 +109,18 @@ Deno.serve(async (req: Request) => {
     const matchIds = await matchListRes.json() as string[]
 
     if (matchIds.length === 0) {
-      // No new matches — just refresh the profile timestamp
+      // No new matches — refresh ranked data + timestamp
+      const rankedRes = await riotFetch(
+        `https://${region.toLowerCase()}.api.riotgames.com/lol/league/v4/entries/by-puuid/${playerId}`,
+        riotKey,
+      )
+      const rankedData = rankedRes.ok ? await rankedRes.json() : []
       await supabase.from('profiles').upsert({
         player_id: playerId,
         game_name: gameName,
         tag_line: tagLine,
         region,
+        ranked_data: rankedData,
         last_compiled_at: new Date().toISOString(),
       })
       return respond({ status: 'ok', newMatches: 0 })
@@ -244,12 +250,20 @@ Deno.serve(async (req: Request) => {
       }
     }
 
-    // 5. Update profile timestamp
+    // 5. Fetch ranked data (platform routing: euw1, na1, kr, etc.)
+    const rankedRes = await riotFetch(
+      `https://${region.toLowerCase()}.api.riotgames.com/lol/league/v4/entries/by-puuid/${playerId}`,
+      riotKey,
+    )
+    const rankedData = rankedRes.ok ? await rankedRes.json() : []
+
+    // 6. Update profile with ranked data + timestamp
     await supabase.from('profiles').upsert({
       player_id: playerId,
       game_name: gameName,
       tag_line: tagLine,
       region,
+      ranked_data: rankedData,
       last_compiled_at: new Date().toISOString(),
     })
 

@@ -1,5 +1,6 @@
 import React from 'react'
 import { TextInput, StyleSheet, View } from 'react-native'
+import { theme } from '../constants/theme'
 
 interface Props {
   value: string
@@ -17,7 +18,7 @@ export function SearchBar({ value, onChangeText, onSubmit, disabled }: Props) {
         onChangeText={onChangeText}
         onSubmitEditing={onSubmit}
         placeholder="Faker#T1"
-        placeholderTextColor="#444"
+        placeholderTextColor={theme.textMuted}
         autoCapitalize="none"
         autoCorrect={false}
         spellCheck={false}
@@ -32,14 +33,14 @@ const styles = StyleSheet.create({
   container: {
     borderRadius: 8,
     borderWidth: 1,
-    borderColor: '#2A2A2A',
-    backgroundColor: '#111',
+    borderColor: theme.border,
+    backgroundColor: theme.surface,
     overflow: 'hidden',
   },
   input: {
     height: 44,
     paddingHorizontal: 14,
-    color: '#fff',
+    color: theme.textPrimary,
     fontSize: 15,
   },
   disabled: {

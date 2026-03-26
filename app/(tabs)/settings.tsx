@@ -1,6 +1,7 @@
 import React from 'react'
 import { View, Text, StyleSheet, ScrollView } from 'react-native'
 import Constants from 'expo-constants'
+import { theme } from '../../constants/theme'
 
 export default function SettingsScreen() {
   return (
@@ -27,11 +28,11 @@ export default function SettingsScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#0A0A0A' },
+  container: { flex: 1, backgroundColor: theme.bg },
   content: { padding: 16 },
   section: { marginBottom: 32 },
   sectionTitle: {
-    color: '#C89B3C',
+    color: theme.accentDark,
     fontSize: 11,
     fontWeight: '700',
     letterSpacing: 1.2,
@@ -43,9 +44,9 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     paddingVertical: 12,
     borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: '#1A1A1A',
+    borderBottomColor: theme.border,
   },
-  label: { color: '#ccc', fontSize: 15 },
-  value: { color: '#666', fontSize: 15 },
-  legal: { color: '#444', fontSize: 12, lineHeight: 19 },
+  label: { color: theme.textPrimary, fontSize: 15 },
+  value: { color: theme.textSecondary, fontSize: 15 },
+  legal: { color: theme.textMuted, fontSize: 12, lineHeight: 19 },
 })

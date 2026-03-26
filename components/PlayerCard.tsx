@@ -1,7 +1,8 @@
 import React from 'react'
 import { View, Text, Pressable, StyleSheet } from 'react-native'
-import type { SearchResult } from '../types'
+import { theme } from '../constants/theme'
 import { REGIONS } from '../constants/regions'
+import type { SearchResult } from '../types'
 
 interface Props {
   result: SearchResult
@@ -38,32 +39,14 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     paddingVertical: 14,
     paddingHorizontal: 16,
+    backgroundColor: theme.surface,
     borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: '#1A1A1A',
+    borderBottomColor: theme.border,
   },
-  cardPressed: {
-    backgroundColor: '#111',
-  },
-  left: {
-    flex: 1,
-  },
-  name: {
-    color: '#fff',
-    fontSize: 15,
-    fontWeight: '600',
-  },
-  tag: {
-    color: '#666',
-    fontWeight: '400',
-  },
-  meta: {
-    color: '#555',
-    fontSize: 12,
-    marginTop: 2,
-  },
-  chevron: {
-    color: '#444',
-    fontSize: 20,
-    marginLeft: 8,
-  },
+  cardPressed: { backgroundColor: theme.separator },
+  left: { flex: 1 },
+  name: { color: theme.textPrimary, fontSize: 15, fontWeight: '600' },
+  tag: { color: theme.textMuted, fontWeight: '400' },
+  meta: { color: theme.textSecondary, fontSize: 12, marginTop: 2 },
+  chevron: { color: theme.textMuted, fontSize: 20, marginLeft: 8 },
 })
